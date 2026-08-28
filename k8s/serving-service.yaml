@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: model-serving
+  namespace: ml-training
+  labels:
+    app: model-serving
+    project: mlops-pytorch-pipeline
+spec:
+  type: ClusterIP
+  # Note: Change type to LoadBalancer if deploying on cloud provider (GKE, EKS, AKS)
+  ports:
+    - port: 80
+      targetPort: 8080
+      protocol: TCP
+      name: http
+  selector:
+    app: model-serving
