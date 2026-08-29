@@ -1,0 +1,30 @@
+# ==============================================================================
+# Model Training & Hyperparameter Configuration
+# Target: CIFAR-10 Classification with ResNet18
+# ==============================================================================
+
+model:
+  name: "resnet18"
+  num_classes: 10
+  pretrained: false
+
+data:
+  data_dir: "data"
+  batch_size: 128
+  num_workers: 2
+  val_split: 0.2
+  image_size: 32
+
+training:
+  epochs: 10
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  checkpoint_dir: "checkpoints"
+  checkpoint_filename: "classifier_v1.pt"
+  seed: 42
+  save_best_only: true
+
+mlflow:
+  enabled: true
+  experiment_name: "cifar10-resnet18"
+  tracking_uri: "mlruns"
