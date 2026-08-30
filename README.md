@@ -1,34 +1,57 @@
-# MLOps PyTorch Pipeline: Docker & Kubernetes End-to-End Deployment
+# Assignment 3: Samuel Paul Pushparaj P (DA25M615)
 
-[![CI Pipeline](https://github.com/your-username/mlops-pytorch-pipeline/actions/workflows/ci.yml/badge.svg)](https://github.com/your-username/mlops-pytorch-pipeline/actions)
-![PyTorch](https://img.shields.io/badge/PyTorch-2.2.2-EE4C2C?logo=pytorch)
-![Docker](https://img.shields.io/badge/Docker-Multi--Stage-2496ED?logo=docker)
-![Kubernetes](https://img.shields.io/badge/Kubernetes-Jobs%20%26%20Deployments-326CE5?logo=kubernetes)
-![FastAPI](https://img.shields.io/badge/FastAPI-0.110.0-009688?logo=fastapi)
+## AI - assitance was used, refinement, environment setup and reporting was done individually with complete understanding of the assignment
 
-An enterprise-grade, reproducible MLOps pipeline for training, containerizing, and orchestrating PyTorch image classification models (ResNet-18 / CIFAR-10) using Docker and Kubernetes.
-
----
-
-## 📐 Architecture Overview
+## Architecture Diagram
 
 ```mermaid
-graph TD
-    A[training_config.yaml / ConfigMap] -->|Mounts /app/configs| B[K8s Training Job / Dockerfile.train]
-    C[(Persistent Volume /app/data)] --> B
-    B -->|Logs Metrics JSON Lines| D[Stdout / Monitoring]
-    B -->|Saves Checkpoint| E[(PVC /app/checkpoints/classifier_v1.pt)]
-    E -->|Read-Only Mount| F[K8s Serving Deployment (2 Replicas)]
-    G[FastAPI App / Dockerfile.serve] --> F
-    F -->|Port 8080| H[K8s Service ClusterIP Port 80]
-    I[Horizontal Pod Autoscaler HPA] -->|Autoscales 2-10 Pods| F
-    J[Client / REST API] -->|POST /predict | H
-    H -->|GET /health | F
+flowchart TD
+    subgraph Storage_and_Configuration ["Storage & Configuration Layer"]
+        CM["ConfigMap: training-config<br/>(training_config.yaml)"]
+        PVC[("PersistentVolumeClaim: ml-data-pvc<br/>(10Gi Standard Storage)")]
+        DATA["/app/data<br/>(CIFAR-10 Batches)"]
+        CKPT["/app/checkpoints<br/>(classifier_v1.pt)"]
+        PVC --> DATA
+        PVC --> CKPT
+    end
+
+    subgraph Training_Pipeline ["Phase 1: Model Training"]
+        TJ["Kubernetes Batch Job / Docker Container<br/>(mlops-train:v1)"]
+        DEV["Device Selector<br/>(CUDA GPU / CPU fallback)"]
+        CM -->|Mounted at /app/configs| TJ
+        DATA -->|Input Data Stream| TJ
+        TJ --> DEV
+        TJ -->|JSON Lines Metrics Log| LOGS["Stdout / Cloud Logging"]
+        TJ -->|Saves Best Weights| CKPT
+    end
+
+    subgraph Serving_Infrastructure ["Phase 2: High-Availability Model Serving"]
+        DEP["Kubernetes Deployment: model-serving<br/>(2 Replicas, mlops-serve:v1)"]
+        CKPT -.->|Read-Only Mount /app/checkpoints| DEP
+        PROBES["Health Probes<br/>(/health liveness & readiness)"]
+        DEP --- PROBES
+        SVC["Kubernetes Service: model-serving<br/>(ClusterIP Port 80 -> 8080)"]
+        DEP -->|Exposed on Port 8080| SVC
+        HPA["Horizontal Pod Autoscaler (HPA)<br/>(Min: 2, Max: 10, Target: 70% CPU)"]
+        HPA -.->|Watches Metrics & Scales| DEP
+    end
+
+    subgraph Client_Traffic ["Phase 3: Client & Ingress"]
+        CLIENT["Client Application / cURL / Postman"]
+        PORTFWD["kubectl port-forward / Ingress<br/>(Localhost:8080 -> Service:80)"]
+        CLIENT -->|HTTP POST /predict<br/>HTTP GET /health, /info| PORTFWD
+        PORTFWD --> SVC
+    end
+
+    style Storage_and_Configuration fill:#f8fafc,stroke:#64748b,stroke-width:2px
+    style Training_Pipeline fill:#f0fdf4,stroke:#22c55e,stroke-width:2px
+    style Serving_Infrastructure fill:#eff6ff,stroke:#3b82f6,stroke-width:2px
+    style Client_Traffic fill:#fdf4ff,stroke:#a855f7,stroke-width:2px
 ```
 
 ---
 
-## 📂 Project Structure
+## Project Structure
 
 ```text
 mlops-pytorch-pipeline/
@@ -52,26 +75,25 @@ mlops-pytorch-pipeline/
 │   ├── train.txt                # Pinned training dependencies
 │   └── serve.txt                # Pinned lightweight inference dependencies
 ├── src/
-│   ├── __init__.py
 │   ├── dataset.py               # CIFAR-10 data loaders & augmentation pipeline
 │   ├── model.py                 # ResNet-18 & custom CNN model definitions
 │   ├── train.py                 # Training loop with JSON metrics & early stopping
 │   └── serve.py                 # High-performance FastAPI server (/health, /predict)
 ├── tests/
 │   ├── __init__.py
+│   ├── sample_image.png         # Airplane sample image for model prediction
 │   └── test_model.py            # Unit tests for shapes, forward pass, and API
 ├── scripts/
 │   ├── setup_git_branches.sh    # Git workflow automation script
-│   ├── run_local_docker.sh      # Local Docker build and run script
-│   ├── deploy_k8s.sh            # Kubernetes deployment orchestration script
-│   └── test_predict.sh          # Quick prediction test script
+│   └── run_local_docker.sh      # Local Docker build and run script
 ├── .gitignore
+├── Architecture.png
 └── README.md
 ```
 
 ---
 
-## 🚀 Quickstart: Local Development
+##Quickstart: Local Development
 
 ### 1. Prerequisites
 - Python 3.11+
@@ -80,9 +102,10 @@ mlops-pytorch-pipeline/
 
 ### 2. Python Environment Setup
 ```bash
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+# Create virtual environment, example uses conda and gitbash
+conda create -n mlops312 python=3.12
+conda init bash #restart git bash
+conda activate mlops312
 
 # Install training dependencies
 pip install -r requirements/train.txt
@@ -98,7 +121,7 @@ python src/train.py
 
 ---
 
-## 🐳 Docker Execution
+##Docker Execution
 
 ### 1. Build Multi-Stage Training Image
 ```bash
@@ -135,12 +158,12 @@ curl http://localhost:8080/health
 
 # Prediction endpoint
 curl -X POST http://localhost:8080/predict \
-  -F "image=@sample_image.png"
+  -F "image=@tests/sample_image.png"
 ```
 
 ---
 
-## ☸️ Kubernetes Deployment
+## Kubernetes Deployment
 
 ### 1. Deploy Namespace, ConfigMap & Storage
 ```bash
@@ -175,19 +198,3 @@ kubectl port-forward svc/model-serving 8080:80 -n ml-training
 # Test prediction
 curl -X POST http://localhost:8080/predict -F "image=@sample_image.png"
 ```
-
----
-
-## 🌿 Git & PR Workflow
-
-This repository adheres to standard Git branching and Conventional Commits:
-
-1. **`main`**: Production-ready code.
-2. **`develop`**: Staging and feature integration branch.
-3. **`feature/*`**: Scoped feature branches merged via Pull Requests.
-
-### Merged Pull Requests:
-- **PR #1 (Week 1)**: `feat(model): implement ResNet-18 model, CIFAR-10 dataset pipeline, and training loop`
-- **PR #2 (Week 1)**: `feat(docker): add multi-stage Dockerfile.train and hardened Dockerfile.serve`
-- **PR #3 (Week 2)**: `feat(k8s): create Kubernetes training job, configmaps, and persistent storage manifests`
-- **PR #4 (Week 2)**: `feat(serving): implement Kubernetes 2-replica deployment, service, health probes, and HPA`
